@@ -226,7 +226,7 @@ export default class LichessDaily extends View {
 
   squarePx() {
     const w = this.size?.width ?? 400;
-    return Math.max(24, Math.floor((Math.min(w, 520) - 16) / 8));
+    return Math.max(24, Math.floor((Math.min(w, 520) - 16 - 14) / 8));
   }
 
   squareColors(t) {
@@ -246,11 +246,13 @@ export default class LichessDaily extends View {
     return G[piece[1]];
   }
 
-  pieceColor(piece) {
-    // Near-black for both sides: contrasts with every square tone in the light
-    // (#eef1ee/#7c96ab) and dark (#98a2ac/#5c6670) palettes. A pale white-piece
-    // glyph vanished on the light squares before.
-    return piece[0] === "w" ? "#23282e" : "#141619";
+  pieceColor(piece, t) {
+    // Dark theme: white pieces get a pale outline (it reads well on the grey
+    // squares). Light theme: near-black for both sides, since pale glyphs
+    // vanish on the light squares there.
+    const dark = lum(t.background) < 128;
+    if (piece[0] === "w") return dark ? "#f7f7f2" : "#23282e";
+    return "#141619";
   }
 
   header(t) {
@@ -297,13 +299,25 @@ export default class LichessDaily extends View {
             .bg(bg).cursor_pointer()
             .on_click((_e, cx) => this.onSquare(name, cx))
             .when(Boolean(piece), (el) => el.child(
-              div().text_size(px * 0.72).text_color(this.pieceColor(piece)).child(this.glyph(piece)),
+              div().text_size(px * 0.72).text_color(this.pieceColor(piece, t)).child(this.glyph(piece)),
             )),
         );
       }
       rows.push(h_flex().flex_none().children(cells));
     }
-    return v_flex().flex_none().border_1().border_color(t.border).rounded(4).overflow_hidden().children(rows);
+    const board = v_flex().flex_none().border_1().border_color(t.border).rounded(4).overflow_hidden().children(rows);
+    // Coordinate labels: ranks down the left, files along the bottom.
+    // They follow the board orientation (reversed when flipped).
+    const label = (text, w, h) => div().w(w).h(h).flex_none().flex().items_center().justify_center()
+      .text_size(10).text_color(t.dim).child(text);
+    const ranks = [...Array(8).keys()].map((i) => String(this.flipped ? i + 1 : 8 - i));
+    const files = [..."ABCDEFGH"].map((f) => f);
+    if (this.flipped) files.reverse();
+    return v_flex().flex_none()
+      .child(h_flex().flex_none()
+        .child(v_flex().flex_none().w(14).h(px * 8 + 2).children([div().w(14).h(1).flex_none(), ...ranks.map((r) => label(r, 14, px))]))
+        .child(board))
+      .child(h_flex().flex_none().children([div().w(15).h(14).flex_none(), ...files.map((f) => label(f, px, 14))]));
   }
 
   // Buttons hand their click's own cx to the action — never the render-time one.
@@ -356,8 +370,8 @@ export default class LichessDaily extends View {
       .gap(8)
       .text_size(12)
       .on_size_change((size, c) => {
-        const w = Math.floor((Math.min(size.width, 520) - 16) / 8);
-        if (!this.size || w !== Math.floor((this.size.width - 16) / 8)) { this.size = size; c.notify(); }
+        const w = Math.floor((Math.min(size.width, 520) - 16 - 14) / 8);
+        if (!this.size || w !== Math.floor((this.size.width - 16 - 14) / 8)) { this.size = size; c.notify(); }
       })
       .child(this.header(t))
       .child(body);
