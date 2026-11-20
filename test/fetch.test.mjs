@@ -127,3 +127,27 @@ test("prune: cache files older than 30 days are deleted", async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("next mode: fetches the random-puzzle URL, writes next.json, ignores the daily cache", async () => {
+  const dir = tmpCache();
+  try {
+    writeFileSync(path.join(dir, `${TODAY}.json`), "{}\n");
+    let url = null;
+    const body = readFileSync(FIXTURE, "utf8");
+    const result = await run({
+      fetchFn: async (u) => { url = u; return { ok: true, status: 200, json: async () => JSON.parse(body) }; },
+      today: TODAY,
+      cacheDir: dir,
+      next: true,
+    });
+    assert.equal(url, "https://lichess.org/api/puzzle/next");
+    assert.equal(path.basename(result.file), "next.json");
+    assert.equal(result.cached, false);
+    const out = JSON.parse(readFileSync(result.file, "utf8"));
+    assert.ok(out.id && out.solution.length);
+    // the daily cache file is untouched
+    assert.equal(readFileSync(path.join(dir, `${TODAY}.json`), "utf8"), "{}\n");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

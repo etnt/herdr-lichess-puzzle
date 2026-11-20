@@ -1,7 +1,8 @@
 // Fetches Lichess's daily puzzle and writes a cache file the mod UI reads:
 //   cache/YYYY-MM-DD.json  { date, id, rating, themes, turn, fen, board, lastMove, solution }
 //
-// Run by hand:  node fetch_puzzle.mjs
+// Run by hand:  node fetch_puzzle.mjs          (daily puzzle)
+//               node fetch_puzzle.mjs --next   (random puzzle -> cache/next.json)
 // Run by the mod UI: exec("node", [<mod dir>/fetch_puzzle.mjs], { cwd: <mod dir> })
 //
 // The PGN is replayed with the pure logic in ./chess.js (no dependency). Lichess's
@@ -17,6 +18,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { isLegalUci, replaySan } from "./chess.js";
 
 export const PUZZLE_URL = "https://lichess.org/api/puzzle/daily";
+// A random puzzle (no auth needed). Used by the "Next puzzle" button; the result
+// goes to cache/next.json, which the date-based pruning never touches.
+export const NEXT_URL = "https://lichess.org/api/puzzle/next";
 const PRUNE_DAYS = 30;
 
 /** Today's date, UTC, as YYYY-MM-DD. The UI uses the same rule. */
@@ -36,18 +40,20 @@ export async function run({
   today = utcToday(),
   cacheDir = defaultCacheDir(),
   timeout = 10_000,
+  next = false,
 } = {}) {
-  const file = path.join(cacheDir, `${today}.json`);
-  if (existsSync(file)) return { ok: true, cached: true, file };
+  const url = next ? NEXT_URL : PUZZLE_URL;
+  const file = path.join(cacheDir, next ? "next.json" : `${today}.json`);
+  if (!next && existsSync(file)) return { ok: true, cached: true, file };
 
   let res;
   try {
-    res = await fetchFn(PUZZLE_URL, {
+    res = await fetchFn(url, {
       headers: { "User-Agent": "herdr-lichess-daily (local Herdr mod)" },
       signal: AbortSignal.timeout(timeout),
     });
   } catch (err) {
-    throw new Error(`could not reach ${PUZZLE_URL}: ${err?.message ?? err}`);
+    throw new Error(`could not reach ${url}: ${err?.message ?? err}`);
   }
   if (!res.ok) throw new Error(`lichess API returned HTTP ${res.status}`);
 
@@ -80,7 +86,7 @@ export async function run({
   const tmp = `${file}.tmp`;
   writeFileSync(tmp, JSON.stringify(out, null, 2) + "\n");
   renameSync(tmp, file);
-  prune(cacheDir, today);
+  if (!next) prune(cacheDir, today);
   return { ok: true, cached: false, file };
 }
 
@@ -123,7 +129,7 @@ function prune(cacheDir, today) {
 
 // Entry point: only when executed directly, not when the tests import this file.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  run()
+  run({ next: process.argv.includes("--next") })
     .then((r) => {
       console.error(`${r.cached ? "cache hit" : "fetched"}: ${r.file}`);
       process.exit(0);

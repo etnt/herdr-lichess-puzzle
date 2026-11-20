@@ -64,11 +64,13 @@ export default class LichessDaily extends View {
     // and comparing against that would reload (and wipe any progress) every
     // minute until the network returns.
     cx.timer.every(60_000, (cx) => {
-      if (this.loadedFor && utcToday() !== this.loadedFor && !this.checking) this.load(cx);
+      // Not while playing an extra ("next") puzzle: a reload would wipe it.
+      if (this.loadedFor && utcToday() !== this.loadedFor && !this.checking && !this.extra) this.load(cx);
     });
   }
 
   async load(cx) {
+    this.extra = false;
     this.generation++;
     this.loadedFor = utcToday();
     const dir = MOD_DIR();
@@ -104,6 +106,30 @@ export default class LichessDaily extends View {
       return;
     }
     this.setupPuzzle(data);
+    cx.notify();
+  }
+
+  // "Next puzzle": fetch a random puzzle into cache/next.json and play it. On
+  // failure the current (solved) puzzle stays on screen with a short message.
+  async loadNext(cx) {
+    if (this.loadingNext || checking()) return;
+    this.loadingNext = true;
+    this.nextError = null;
+    cx.notify();
+    const dir = MOD_DIR();
+    let data = null;
+    try {
+      await this.runNode([`${dir}/fetch_puzzle.mjs`, "--next"], dir);
+      data = JSON.parse(await readTextFile(`${dir}/cache/next.json`));
+    } catch (err) {
+      this.nextError = "Could not fetch a new puzzle. Check your connection and try again.";
+    }
+    this.loadingNext = false;
+    if (data) {
+      this.generation++; // drop timers belonging to the previous puzzle
+      this.extra = true;
+      this.setupPuzzle(data);
+    }
     cx.notify();
   }
 
@@ -332,6 +358,8 @@ export default class LichessDaily extends View {
       .child(h_flex().gap(6).flex_wrap()
         .child(this.footButton(t, "btn-hint", "Hint", (c) => this.hintNow(c)))
         .child(this.footButton(t, "btn-reset", "Reset", (c) => this.reset(c)))
+        .when(this.status === "solved", (el) => el.child(this.footButton(
+          t, "btn-next", this.loadingNext ? "Loading…" : "Next puzzle", (c) => this.loadNext(c))))
         .when(this.data, (el) => el.child(this.footButton(t, "btn-open", "Open on Lichess", (c) => {
           // The id comes from a cache file; never feed it to the URL unvalidated.
           const id = String(this.data.id ?? "");
@@ -339,7 +367,7 @@ export default class LichessDaily extends View {
         }))))
       .child(div().text_size(10.5).text_color(t.dim).child(
         this.status === "solved"
-          ? "Solved — nice. A new puzzle arrives at UTC midnight."
+          ? (this.nextError ?? "Solved — nice. Press Next puzzle for another one.")
           : "Click your piece, then the target square. Hint shows the piece to move. Alternate mating moves are not accepted in this version — play the listed solution.",
       ));
   }

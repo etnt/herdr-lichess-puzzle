@@ -52,6 +52,11 @@ close and reopen the popup to load the new code.
 
 ## How it works
 
+- When you solve the puzzle, a **Next puzzle** button appears. It runs
+  `node fetch_puzzle.mjs --next`, which fetches a random puzzle from
+  `https://lichess.org/api/puzzle/next` into `cache/next.json` and plays it. It
+  needs the network; if the fetch fails, the solved puzzle stays on screen with
+  a message. The daily puzzle returns when you reopen the popup.
 - On load the mod runs `node fetch_puzzle.mjs` (via `exec`, guarded by
   `checking()` so `herdr-app check` stays side-effect free), then reads
   `cache/<today>.json`. UTC dates everywhere — Lichess rolls the daily puzzle
