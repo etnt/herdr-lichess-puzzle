@@ -13,7 +13,9 @@
 // Playing: click your piece, then the target square. A move is accepted when it
 // matches `solution[stepIndex]` (a promotion defaults to the solution's piece).
 // After your move the opponent's reply is played 300 ms later (cx.timer, never
-// setTimeout); clicks are ignored while it is pending. Alternate mating moves
+// setTimeout); clicks are ignored while it is pending, and every delayed callback
+// carries a generation token so a reset() or rollover reload during that window
+// cannot let a stale timer fire against the new board. Alternate mating moves
 // are rejected in v1 — the help text in the footer says so.
 
 import { View, div } from "gpui-kit";
@@ -26,6 +28,12 @@ const MOD_DIR = () => `${appHome()}/mods/lichess-daily`;
 /** Today's date, UTC, as YYYY-MM-DD — the same rule the fetcher uses. */
 function utcToday(now = new Date()) {
   return now.toISOString().slice(0, 10);
+}
+
+// True when an exec() failure means the binary itself is missing (ENOENT) —
+// the only case where runNode() should fall through to the next candidate.
+function isMissingBinary(err) {
+  return err?.code === "ENOENT" || /ENOENT|No such file/i.test(String(err?.message ?? err));
 }
 
 function lum(hex) {
@@ -42,17 +50,24 @@ export default class LichessDaily extends View {
     this.day = null;
     this.size = null; // { width, height }, from on_size_change
     this.replyPending = false;
+    // Bumped on every load()/reset(): delayed timers capture it and no-op when it
+    // has moved on, so a stale reply can never land on a fresh board.
+    this.generation = 0;
     this.checking = checking();
     this.load(cx);
     // Day rollover: a cheap string compare every minute; the reload only happens
-    // when the UTC date has actually changed.
+    // when the UTC date has changed since the last load. `loadedFor` is distinct
+    // from `this.day` on purpose — when offline we display an older cached day,
+    // and comparing against that would reload (and wipe any progress) every
+    // minute until the network returns.
     cx.timer.every(60_000, (cx) => {
-      if (this.day && utcToday() !== this.day && !this.checking) this.load(cx);
+      if (this.loadedFor && utcToday() !== this.loadedFor && !this.checking) this.load(cx);
     });
   }
 
   async load(cx) {
-    this.day = utcToday();
+    this.generation++;
+    this.loadedFor = utcToday();
     const dir = MOD_DIR();
     // The fetcher is a side effect: never run it during `herdr-app check`.
     if (!checking()) {
@@ -89,15 +104,18 @@ export default class LichessDaily extends View {
     cx.notify();
   }
 
-  // `node` first (the user's real PATH via exec), then common fallbacks.
+  // `node` first (the user's real PATH via exec), then common fallbacks. Only a
+  // missing binary (ENOENT) falls through to the next candidate; a non-zero exit
+  // is a real failure and is reported as-is.
   async runNode(args, cwd) {
     let lastErr;
     for (const bin of ["node", "/opt/homebrew/bin/node", "/usr/local/bin/node"]) {
       try {
         const r = await exec(bin, args, { cwd, timeout: 20_000 });
         if (r.code === 0) return r;
-        lastErr = new Error(r.stderr?.trim() || `exit ${r.code}`);
+        throw new Error(r.stderr?.trim() || `${bin} exited with code ${r.code}`);
       } catch (err) {
+        if (!isMissingBinary(err)) throw err;
         lastErr = err;
       }
     }
@@ -107,7 +125,9 @@ export default class LichessDaily extends View {
   async newestCache(dir) {
     if (checking()) return null;
     try {
-      const r = await exec("sh", ["-c", `ls -t "${dir}"/cache/*.json 2>/dev/null | head -1`], { timeout: 5000 });
+      // dir is passed as a positional parameter ("$1"), never interpolated into
+      // the shell string, so paths with quotes or spaces stay safe.
+      const r = await exec("sh", ["-c", 'ls -t "$1"/cache/*.json 2>/dev/null | head -n 1', "sh", dir], { timeout: 5000 });
       const line = r.stdout.trim().split("\n")[0];
       return line || null;
     } catch {
@@ -132,6 +152,8 @@ export default class LichessDaily extends View {
 
   reset(cx) {
     if (this.data) this.setupPuzzle(this.data);
+    // Invalidate any pending reply/hint timer so it cannot fire on the new board.
+    this.generation++;
     cx.notify();
   }
 
@@ -173,7 +195,9 @@ export default class LichessDaily extends View {
         this.status = "solved";
       } else {
         this.replyPending = true;
+        const gen = this.generation;
         cx.timer.after(300, (cx) => {
+          if (gen !== this.generation) return; // reset/reload happened during the wait
           this.replyPending = false;
           const reply = this.data.solution[this.stepIndex];
           this.board = applyUciMove(this.board, reply);
@@ -208,8 +232,9 @@ export default class LichessDaily extends View {
   }
 
   glyph(piece) {
-    // Filled glyphs for black, outline glyphs for white — both fonts render the
-    // filled shapes strongly, but a filled white glyph would vanish on a light square.
+    // Hollow glyphs for white, filled glyphs for black — the shape (not the
+    // colour) carries the side, so both can be drawn dark and stay readable on
+    // light squares in either theme.
     const G = piece[0] === "w"
       ? { K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘", P: "♙" }
       : { K: "♚", Q: "♛", R: "♜", B: "♝", N: "♞", P: "♟" };
@@ -217,7 +242,10 @@ export default class LichessDaily extends View {
   }
 
   pieceColor(piece) {
-    return piece[0] === "w" ? "#f7f7f2" : "#191919";
+    // Near-black for both sides: contrasts with every square tone in the light
+    // (#eef1ee/#7c96ab) and dark (#98a2ac/#5c6670) palettes. A pale white-piece
+    // glyph vanished on the light squares before.
+    return piece[0] === "w" ? "#23282e" : "#141619";
   }
 
   header(t) {
@@ -286,7 +314,9 @@ export default class LichessDaily extends View {
         .child(this.footButton(t, "btn-hint", "Hint", (c) => this.hintNow(c)))
         .child(this.footButton(t, "btn-reset", "Reset", (c) => this.reset(c)))
         .when(this.data, (el) => el.child(this.footButton(t, "btn-open", "Open on Lichess", (c) => {
-          c.open_url(`https://lichess.org/training/${this.data.id}`);
+          // The id comes from a cache file; never feed it to the URL unvalidated.
+          const id = String(this.data.id ?? "");
+          if (/^[A-Za-z0-9]+$/.test(id)) c.open_url(`https://lichess.org/training/${id}`);
         }))))
       .child(div().text_size(10.5).text_color(t.dim).child(
         this.status === "solved"
