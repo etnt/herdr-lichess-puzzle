@@ -22,4 +22,4 @@ else
   echo "Installed (symlink): $MODS/$NAME -> $REPO/$NAME"
 fi
 
-echo "Then add the mod to your layout (see README.md) and reload Herdr."
+echo "Then bind a key or run: herdr-app do mod.open --name lichess-daily (see README.md)."

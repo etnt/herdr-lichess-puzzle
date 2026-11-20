@@ -1,6 +1,6 @@
 # lichess-daily (Herdr mod)
 
-A Herdr pane with Lichess's daily chess puzzle. A small Node fetcher caches the
+A Herdr popup with Lichess's daily chess puzzle. A small Node fetcher caches the
 puzzle once a day; the GPUI board lets you play through the solution, with a
 Hint, a Reset and an Open on Lichess button.
 
@@ -24,15 +24,31 @@ herdr-app check ~/.config/herdr-app/mods/lichess-daily
 A symlink works (Herdr follows it); `./install.sh copy` makes a plain copy
 instead if you ever prefer one.
 
-## Open it
+## Open the popup
 
-The mod is a popup, not a docked panel (`"place": "none"` in `mod.json`). Open
-it with `herdr-app do mod.open --name lichess-daily`, or bind a key in
-`~/.config/herdr-app/keys.json`:
+After installing, the puzzle does not appear on its own. It opens as a popup
+over the window (`"place": "none"` in `mod.json` keeps it out of the layout).
+Pick one way to open it:
 
-```json
-"cmd-alt-l": "mod.open:lichess-daily"
-```
+1. **Key binding (recommended).** Add this line to the `"global"` section of
+   `~/.config/herdr-app/keys.json`. Herdr applies it at once.
+
+   ```json
+   "cmd-alt-l": "mod.open:lichess-daily"
+   ```
+
+   Then press ⌘⌥L.
+
+2. **Command line.**
+
+   ```sh
+   herdr-app do mod.open --name lichess-daily
+   ```
+
+3. **Command palette.** Press ⌘⇧P and look for `mod.open`.
+
+To close the popup, press Esc or click outside it. After you edit `main.js`,
+close and reopen the popup to load the new code.
 
 ## How it works
 
