@@ -6,7 +6,7 @@ Hint, a Reset and an Open on Lichess button.
 
 ```
 lichess-daily/
-  mod.json          { "title": "Lichess Daily", "place": "right", "size": 400 }
+  mod.json          { "title": "Lichess Daily", "place": "none", "size": 400 }
   main.js           the GPUI view (board, state machine, buttons)
   chess.js          pure chess logic shared by the fetcher and the UI
   fetch_puzzle.mjs  fetches https://lichess.org/api/puzzle/daily, writes cache/
@@ -24,18 +24,14 @@ herdr-app check ~/.config/herdr-app/mods/lichess-daily
 A symlink works (Herdr follows it); `./install.sh copy` makes a plain copy
 instead if you ever prefer one.
 
-## Add it to the layout
+## Open it
 
-The first time Herdr sees the folder it docks one copy per `mod.json` into the
-shown layout. To pin it as a tab in the hidden right panel stack, add a block to
-the `panel-body` stack in `layouts/Herdr-Roundup.json`:
+The mod is a popup, not a docked panel (`"place": "none"` in `mod.json`). Open
+it with `herdr-app do mod.open --name lichess-daily`, or bind a key in
+`~/.config/herdr-app/keys.json`:
 
 ```json
-{
-  "id": "lichess-daily",
-  "type": "block",
-  "content": { "mod": "lichess-daily" }
-}
+"cmd-alt-l": "mod.open:lichess-daily"
 ```
 
 ## How it works
