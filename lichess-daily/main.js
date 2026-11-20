@@ -30,10 +30,13 @@ function utcToday(now = new Date()) {
   return now.toISOString().slice(0, 10);
 }
 
-// True when an exec() failure means the binary itself is missing (ENOENT) —
-// the only case where runNode() should fall through to the next candidate.
+// True only when an exec() failure means the binary itself is missing (ENOENT
+// on the thrown error) — the only case where runNode() should fall through to
+// the next candidate. Non-zero exits are rethrown as plain Errors with no
+// `code`, so a script's stderr mentioning "No such file" can never be mistaken
+// for a missing binary.
 function isMissingBinary(err) {
-  return err?.code === "ENOENT" || /ENOENT|No such file/i.test(String(err?.message ?? err));
+  return err?.code === "ENOENT";
 }
 
 function lum(hex) {
@@ -77,7 +80,7 @@ export default class LichessDaily extends View {
         this.fetchError = String(err?.message ?? err);
       }
     }
-    let text = await readTextFile(`${dir}/cache/${this.day}.json`);
+    let text = await readTextFile(`${dir}/cache/${this.loadedFor}.json`);
     if (text == null) {
       // Offline with no cache for today: fall back to the newest cached day.
       const newest = await this.newestCache(dir);
@@ -161,7 +164,9 @@ export default class LichessDaily extends View {
     if (this.status !== "playing" || this.stepIndex >= (this.data?.solution.length ?? 0)) return;
     this.hint = this.data.solution[this.stepIndex].slice(0, 2);
     cx.notify();
+    const gen = this.generation;
     cx.timer.after(2000, (cx) => {
+      if (gen !== this.generation) return; // reset/reload happened during the wait
       if (this.hint) { this.hint = null; cx.notify(); }
     });
   }
