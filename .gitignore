@@ -1,0 +1,6 @@
+# macOS noise
+.DS_Store
+
+# The fetcher writes one JSON per day next to the mod; keep the folder itself
+lichess-daily/cache/*.json
+!lichess-daily/cache/.gitkeep
