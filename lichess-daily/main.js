@@ -69,7 +69,13 @@ export default class LichessDaily extends View {
     });
   }
 
-  async load(cx) {
+  // Herdr: a cx must not be kept across an await — run the work inside
+  // cx.spawn and use the cx it hands in.
+  load(cx) {
+    cx.spawn((cx) => this.loadTask(cx));
+  }
+
+  async loadTask(cx) {
     this.extra = false;
     this.generation++;
     this.loadedFor = utcToday();
@@ -111,16 +117,22 @@ export default class LichessDaily extends View {
 
   // "Next puzzle": fetch a random puzzle into cache/next.json and play it. On
   // failure the current (solved) puzzle stays on screen with a short message.
-  async loadNext(cx) {
+  loadNext(cx) {
     if (this.loadingNext || checking()) return;
     this.loadingNext = true;
     this.nextError = null;
     cx.notify();
+    cx.spawn((cx) => this.loadNextTask(cx));
+  }
+
+  async loadNextTask(cx) {
     const dir = MOD_DIR();
     let data = null;
     try {
       await this.runNode([`${dir}/fetch_puzzle.mjs`, "--next"], dir);
-      data = JSON.parse(await readTextFile(`${dir}/cache/next.json`));
+      const text = await readTextFile(`${dir}/cache/next.json`);
+      if (text == null) throw new Error("next.json missing");
+      data = JSON.parse(text);
     } catch (err) {
       this.nextError = "Could not fetch a new puzzle. Check your connection and try again.";
     }
